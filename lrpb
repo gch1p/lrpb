@@ -5,9 +5,11 @@ set -e
 
 PROGNAME="$0"
 BOLD=$(tput bold)
+YELLOW=$(tput setaf 3)
 RST=$(tput sgr0)
 
 file=
+name=
 config_file="/etc/lrpb.conf"
 declare -A config=()
 command=
@@ -23,12 +25,14 @@ echoerr() {
 
 usage() {
 	cat <<EOF
-usage: $PROGNAME OPTIONS COMMAND
+usage: $PROGNAME [OPTIONS] COMMAND
 
 Options:
     -c|--config FILE   path to config file (default: $config_file)
     -f|--file FILE     path to script
-    -x                 set -x
+    --name             for convenience, name can be passed in arguments
+                       instead of specifying in config
+    -x                 do \`set -x\`
 
 Commands:
     upload
@@ -62,6 +66,8 @@ signify() {
 read_config() {
 	local n=0
 	local failed=
+	local key
+	local value
 
 	while read line; do
 		n=$(( n+1 ))
@@ -72,7 +78,14 @@ read_config() {
 		fi
 
 		if [[ $line = *"="* ]]; then
-			config[${line%%=*}]=${line#*=}
+			key="${line%%=*}"
+			value="${line#*=}"
+			if [ "$key" = "name" ] && [ -n "$name" ]; then
+				echoerr "${YELLOW}warning: ignoring name ${BOLD}'${value}'${RST}${YELLOW} from the config, using ${BOLD}'${name}'${RST}${YELLOW} instead${RST}"
+				config[name]="$name"
+				continue
+			fi
+			config[$key]="$value"
 		else
 			echoerr "config: invalid line $n"
 			failed=1
@@ -190,6 +203,11 @@ while [[ $# -gt 0 ]]; do
 			shift; shift
 			;;
 
+		--name)
+			name="$2"
+			shift; shift
+			;;
+
 		-x)
 			set -x
 			shift
@@ -203,7 +221,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [ -z "$config_file" ] && die "config is not specied"
-[ -f "$config_file" ] || die "config file (${BOLD}${config}${RST}) not found"
+[ -f "$config_file" ] || die "config file (${BOLD}${config_file}${RST}) not found"
 read_config
 
 [ -z "$command" ] && die "command not specified"
