@@ -228,12 +228,19 @@ read_config
 case "$command" in
 	upload)
 		[ -z "$file" ] && die "file is not specified"
-		check_config "upload_host upload_port upload_user upload_path name signify_path seckey_path"
+
+		config_keys="upload_host upload_port upload_user upload_path signify_path seckey_path"
+		if [ -z "$name" ]; then config_keys="$config_keys name"; fi
+		check_config "$config_keys"
+
 		do_upload "$(realpath "$file")"
 		;;
 
 	exec)
-		check_config "url name pubkey_path signify_path cwd cache_file"
+		config_keys="url pubkey_path signify_path cwd cache_file"
+		if [ -z "$name" ]; then config_keys="$config_keys name"; fi
+		check_config "$config_keys"
+
 		[ -d "${config[cwd]}" ] || die "invalid ${BOLD}cwd${RST}: no such directory"
 		do_exec
 		;;
