@@ -60,7 +60,7 @@ want, just make sure to set correct path in the config).
 
 Write lrpb server config and save it to `/etc/lrpb.conf`:
 
-	url="https://mydomain.org/lrpb/"
+	url=https://mydomain.org/lrpb/
 	pubkey_path=/etc/lrpb.pub
 	name=myname
 	signify_path=/usr/bin/signify-openbsd
