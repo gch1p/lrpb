@@ -28,7 +28,7 @@ usage: $PROGNAME OPTIONS COMMAND
 Options:
     -c|--config FILE   path to config file (default: $config_file)
     -f|--file FILE     path to script
-	-x                 set -x
+    -x                 set -x
 
 Commands:
     upload
