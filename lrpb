@@ -1,0 +1,227 @@
+#!/bin/bash
+
+set -e
+#set -x
+
+PROGNAME="$0"
+BOLD=$(tput bold)
+RST=$(tput sgr0)
+
+file=
+config_file="/etc/lrpb.conf"
+declare -A config=()
+command=
+
+die() {
+    echoerr "error: $@"
+    exit 1
+}
+
+echoerr() {
+	>&2 echo "$@"
+}
+
+usage() {
+	cat <<EOF
+usage: $PROGNAME OPTIONS COMMAND
+
+Options:
+    -c|--config FILE   path to config file (default: $config_file)
+    -f|--file FILE     path to script
+	-x                 set -x
+
+Commands:
+    upload
+    exec
+EOF
+	exit 1
+}
+
+installed() {
+	command -v "$1" > /dev/null
+	return $?
+}
+
+download() {
+	local source="$1"
+	local target="$2"
+
+	if installed curl; then
+		curl -f -s -o "$target" "$source"
+	elif installed wget; then
+		wget -q -O "$target" "$source"
+	else
+		die "neither curl nor wget found, can't proceed"
+	fi
+}
+
+signify() {
+	"${config[signify_path]}" "$@"
+}
+
+read_config() {
+	local n=0
+	local failed=
+
+	while read line; do
+		n=$(( n+1 ))
+
+		# skip empty lines or comments
+		if [ -z "$line" ] || [[ "$line" =~ ^#.*  ]]; then
+			continue
+		fi
+
+		if [[ $line = *"="* ]]; then
+			config[${line%%=*}]=${line#*=}
+		else
+			echoerr "config: invalid line $n"
+			failed=1
+		fi
+	done < <(cat "$config_file")
+
+	[ -z "$failed" ] || exit 1
+}
+
+check_config() {
+	local failed=
+
+	for key in $1; do
+		if [ -z "${config[$key]}" ]; then
+			echoerr "config: ${BOLD}${key}${RST} is missing"
+			failed=1
+		fi
+	done
+
+	[ -z "$failed" ] || exit 1
+}
+
+delete_unpacked_script() {
+	local path=
+	for f in script.sh script.sh.sig; do 
+		path="${config[cwd]}/$f"
+		if [ -f "$path" ]; then rm "$path"; fi
+	done
+}
+
+do_upload() {
+	local file="$1"
+	local dir=$(mktemp -d)
+
+	pushd "$dir" >/dev/null
+	cp "$file" .
+
+	local bname="$(basename "$file")"
+
+	signify -S -s "${config[seckey_path]}" -m "$bname" || \
+		die "signify failed: $?"
+
+	local archive="${config[name]}.tar.gz"
+
+	tar --owner=0 --group=0 \
+		--transform="flags=r;s|$bname|script.sh|" \
+		--transform="flags=r;s|$bname.sig|script.sh.sig|" \
+		-czf "$archive" "$bname" "$bname.sig" >/dev/null
+
+	rsync -p --chmod=u+rw,g+r,o+r -e "ssh -p${config[upload_port]}" \
+		$archive \
+		"${config[upload_user]}"@"${config[upload_host]}":"${config[upload_path]}" || \
+		die "rsync failed: $?"
+
+	popd >/dev/null
+	rm -rf "$dir"
+}
+
+do_exec() {
+	pushd "${config[cwd]}" >/dev/null || die "failed to change to ${config[cwd]}"
+
+	local archive="${config[name]}.tar.gz"
+	download "${config[url]}$archive" "$archive" || exit 0
+
+	local checksum
+	local same=0
+	local f
+
+	checksum=$(md5sum "$archive" | awk '{print $1}')
+	if [ -f "${config[cache_file]}" ] && [ "$(cat "${config[cache_file]}")" = "$checksum" ]; then
+		same=1
+	fi
+
+	if [ "$same" = "0" ]; then
+		delete_unpacked_script
+		tar --no-same-owner -xzf "$archive"
+		
+		signify -V -p "${config[pubkey_path]}" -m script.sh >/dev/null || die "signify failed: $?"
+		echo "$checksum" > "${config[cache_file]}"
+
+		chmod +x script.sh
+		sh script.sh || echoerr "script.sh exited with $?"
+	else
+		echoerr "archive have not changed, skipping"
+	fi
+		
+	rm "$archive"
+	delete_unpacked_script
+
+	popd >/dev/null
+}
+
+case $BASH_VERSION in
+  ''|[0-3].*)
+	  die "bash 4.0 is required"
+	  ;;
+esac
+
+[[ $# -lt 1 ]] && usage
+
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		upload|exec)
+			command="$1"
+			shift
+			;;
+
+		-c|--config)
+			config_file="$2"
+			shift; shift
+			;;
+
+		-f|--file)
+			file="$2"
+			shift; shift
+			;;
+
+		-x)
+			set -x
+			shift
+			;;
+
+		*)
+			die "unrecognized option $1"
+			exit 1
+			;;
+	esac
+done
+
+[ -z "$config_file" ] && die "config is not specied"
+[ -f "$config_file" ] || die "config file (${BOLD}${config}${RST}) not found"
+read_config
+
+[ -z "$command" ] && die "command not specified"
+case "$command" in
+	upload)
+		[ -z "$file" ] && die "file is not specified"
+		check_config "upload_host upload_port upload_user upload_path name signify_path seckey_path"
+		do_upload "$(realpath "$file")"
+		;;
+
+	exec)
+		check_config "url name pubkey_path signify_path cwd cache_file"
+		[ -d "${config[cwd]}" ] || die "invalid ${BOLD}cwd${RST}: no such directory"
+		do_exec
+		;;
+
+	*)
+		die "invalid command '$command'"
+		;;
+esac
+
