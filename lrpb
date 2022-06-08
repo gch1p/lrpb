@@ -82,7 +82,6 @@ read_config() {
 			value="${line#*=}"
 			if [ "$key" = "name" ] && [ -n "$name" ]; then
 				echoerr "${YELLOW}warning: ignoring name ${BOLD}'${value}'${RST}${YELLOW} from the config, using ${BOLD}'${name}'${RST}${YELLOW} instead${RST}"
-				config[name]="$name"
 				continue
 			fi
 			config[$key]="$value"
@@ -91,6 +90,8 @@ read_config() {
 			failed=1
 		fi
 	done < <(cat "$config_file")
+
+	if [ -n "$name" ]; then config[name]="$name"; fi
 
 	[ -z "$failed" ] || exit 1
 }
