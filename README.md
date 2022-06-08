@@ -84,7 +84,7 @@ Test that it works:
 
 Add cron task (`crontab -e`):
 
-	0,30 * * * * /usr/local/bin/lrpb exec
+	0,30 * * * * /usr/local/bin/lrpb exec >/dev/null
 
 
 ## License
