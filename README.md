@@ -82,7 +82,10 @@ Test that it works:
 
 	lrpb exec
 
-Add cron task (`crontab -e`):
+Add task to crontab:
+
+	TERM=xterm
+	PATH=<you should enter your $PATH here>
 
 	0,30 * * * * /usr/local/bin/lrpb exec >/dev/null
 
